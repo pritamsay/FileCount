@@ -4,7 +4,15 @@ Show a sortable file count in Windows 11 File Explorer. In icon views, folders s
 
 ## Install and uninstall
 
-Run either command in Command Prompt or PowerShell on Windows x64.
+Run these commands in Command Prompt or PowerShell on Windows x64.
+
+**Check whether FileCount is installed**
+
+```text
+powershell.exe -NoProfile -Command "if (Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*' -ErrorAction SilentlyContinue | Where-Object DisplayName -eq 'FileCount') { 'FileCount is installed' } else { 'FileCount is not installed' }"
+```
+
+This reads the current Windows user's installed-app registration and prints `FileCount is installed` or `FileCount is not installed`. It works for both MSI versions 1.1.0 and 1.1.1. Portable test copies are outside this check.
 
 **Install FileCount 1.1.1**
 
