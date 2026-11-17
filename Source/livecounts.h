@@ -63,7 +63,20 @@ struct ViewCounts {
     bool protectedFiles = false;
     std::map<wstring, CachedCount> cached;
     std::map<wstring, ULONGLONG> iconCounts;
+    ComPtr<IShellItem> sample;
 };
+
+static bool viewHasCachedCount(IFolderView2* view, IShellItem* sample) {
+    if (!sample) return false;
+    PIDLIST_ABSOLUTE id = nullptr;
+    if (FAILED(SHGetIDListFromObject(sample, &id))) return false;
+    PROPVARIANT value = {};
+    HRESULT hr = view->GetViewProperty(ILFindLastID(id), PKEY_FileCount, &value);
+    CoTaskMemFree(id);
+    bool present = SUCCEEDED(hr) && value.vt == VT_UI8;
+    PropVariantClear(&value);
+    return present;
+}
 
 // Each Explorer window has its own folder, sort order and display cache.
 static HRESULT updateCounts(IFolderView2* view, bool icons, ViewCounts& state) {
@@ -87,7 +100,8 @@ static HRESULT updateCounts(IFolderView2* view, bool icons, ViewCounts& state) {
     bool settingsChanged = state.hidden != bool(options.fShowAllObjects) ||
                            state.protectedFiles != bool(options.fShowSuperHidden);
     if (!settingsChanged && icons == state.icons && state.folder == parent.native() &&
-        state.lastUpdate && now - state.lastUpdate < 4000) return S_OK;
+        state.lastUpdate && now - state.lastUpdate < 4000 &&
+        viewHasCachedCount(view, state.sample.Get())) return S_OK;
     if (settingsChanged || state.folder != parent.native()) state.cached.clear();
     state.hidden = options.fShowAllObjects;
     state.protectedFiles = options.fShowSuperHidden;
@@ -95,6 +109,7 @@ static HRESULT updateCounts(IFolderView2* view, bool icons, ViewCounts& state) {
     state.lastUpdate = now;
     state.icons = icons;
     state.iconCounts.clear();
+    state.sample.Reset();
 
     ComPtr<IShellItemArray> items;
     hr = view->Items(SVGIO_ALLVIEW, IID_PPV_ARGS(&items));
@@ -137,6 +152,7 @@ static HRESULT updateCounts(IFolderView2* view, bool icons, ViewCounts& state) {
             count.checked = now;
         }
         if (unique) state.iconCounts[displayName] = count.files;
+        if (!state.sample && count.files != UnknownCount) state.sample = item;
         PIDLIST_ABSOLUTE id = nullptr;
         if (FAILED(SHGetIDListFromObject(item.Get(), &id))) continue;
         auto row = ILFindLastID(id);
@@ -158,13 +174,16 @@ static HRESULT updateCounts(IFolderView2* view, bool icons, ViewCounts& state) {
         std::vector<SORTCOLUMN> sort(sortCount);
         if (SUCCEEDED(view->GetSortColumns(sort.data(), sortCount)) &&
             IsEqualPropertyKey(sort.front().propkey, PKEY_FileCount)) {
-            // Explorer ignores a repeated sort request after F5. Rebuild the
-            // order once after filling empty cells, then restore its direction.
-            SORTCOLUMN byName = {PKEY_ItemNameDisplay, SORT_ASCENDING};
-            view->SetSortColumns(&byName, 1);
-            // The shell applies the sort asynchronously on its UI thread.
-            Sleep(300);
-            view->SetSortColumns(sort.data(), sortCount);
+            // A changed trailing sort key makes Explorer re-evaluate its cache.
+            // Keep File count first throughout, including after F5.
+            if (sort.size() >= 3 && IsEqualPropertyKey(sort.back().propkey, PKEY_ItemPathDisplay)) {
+                sort.back().direction = sort.back().direction == SORT_ASCENDING ?
+                                        SORT_DESCENDING : SORT_ASCENDING;
+            } else {
+                sort.push_back({PKEY_ItemNameDisplay, SORT_ASCENDING});
+                sort.push_back({PKEY_ItemPathDisplay, SORT_ASCENDING});
+            }
+            view->SetSortColumns(sort.data(), static_cast<int>(sort.size()));
         }
     }
     return S_OK;

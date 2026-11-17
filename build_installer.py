@@ -8,14 +8,14 @@ from msilib import schema, sequence
 root = Path(__file__).resolve().parent
 release = root / "dist"
 release.mkdir(exist_ok=True)
-package = release / "FileCount-1.1.1-x64.msi"
+package = release / "FileCount-1.1.2-x64.msi"
 if not msilib.AMD64:
     raise RuntimeError("Use 64-bit Python.")
 if not (root / "ExplorerCounts.exe").is_file():
     raise RuntimeError("Run Source/build.cmd first.")
 
 db = msilib.init_database(str(package), schema, "FileCount",
-                          "{B3155947-DD08-4664-A8ED-822CCC5055E6}", "1.1.1", "pritamsay")
+                          "{1180C4D7-58A0-48B4-BDB0-94C42594E7F2}", "1.1.2", "pritamsay")
 summary = db.GetSummaryInformation(1)
 # Compressed media (2) and a package that needs only current-user access (8).
 summary.SetProperty(msilib.PID_WORDCOUNT, 10)
@@ -30,8 +30,8 @@ add("Property", [("UpgradeCode", "{AE89250B-8094-46BD-B4BB-148D78C80DF1}"),
                  ("INSTALLLEVEL", "1"), ("ARPNOMODIFY", "1"),
                  ("SecureCustomProperties", "OLDERFILECOUNT;NEWERFILECOUNT")])
 add("Upgrade", [
-    ("{AE89250B-8094-46BD-B4BB-148D78C80DF1}", None, "1.1.1", None, 0, None, "OLDERFILECOUNT"),
-    ("{AE89250B-8094-46BD-B4BB-148D78C80DF1}", "1.1.1", None, None, 2, None, "NEWERFILECOUNT"),
+    ("{AE89250B-8094-46BD-B4BB-148D78C80DF1}", None, "1.1.2", None, 0, None, "OLDERFILECOUNT"),
+    ("{AE89250B-8094-46BD-B4BB-148D78C80DF1}", "1.1.2", None, None, 2, None, "NEWERFILECOUNT"),
 ])
 add("LaunchCondition", [("Installed OR NOT NEWERFILECOUNT", "A newer FileCount version is installed.")])
 add("Directory", [("TARGETDIR", None, "SourceDir"),
@@ -50,7 +50,7 @@ add("FeatureComponents", [(feature.id, "Application")])
 exe = root / "ExplorerCounts.exe"
 file_sequence, file_id = cab.append(str(exe), exe.name, "ExplorerCounts")
 add("File", [(file_id, "Application", "COUNT.EXE|ExplorerCounts.exe", exe.stat().st_size,
-              "1.1.1.0", "1033", 512, file_sequence)])
+              "1.1.2.0", "1033", 512, file_sequence)])
 
 for folder in ["ProgramMenuFolder", "StartupFolder"]:
     add("Shortcut", [(folder + "Link", folder, "FileCount", "Application",
