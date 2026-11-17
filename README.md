@@ -9,10 +9,10 @@ Run these commands in Command Prompt or PowerShell on Windows x64.
 **Check whether FileCount is installed**
 
 ```text
-powershell.exe -NoProfile -Command "if (Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*' -ErrorAction SilentlyContinue | Where-Object DisplayName -eq 'FileCount') { 'FileCount is installed' } else { 'FileCount is not installed' }"
+powershell.exe -NoProfile -Command "try { if ((New-Object -ComObject WindowsInstaller.Installer).ProductState('{B3155947-DD08-4664-A8ED-822CCC5055E6}') -eq 5 -or (New-Object -ComObject WindowsInstaller.Installer).ProductState('{00F17C7A-452D-4CDD-B47D-3416E2046183}') -eq 5) { 'FileCount is installed' } else { 'FileCount is not installed' } } catch { Write-Error 'Could not check Windows Installer'; exit 1 }"
 ```
 
-This reads the current Windows user's installed-app registration and prints `FileCount is installed` or `FileCount is not installed`. It works for both MSI versions 1.1.0 and 1.1.1. Portable test copies are outside this check.
+This asks Windows Installer whether FileCount 1.1.0 or 1.1.1 is installed and prints `FileCount is installed` or `FileCount is not installed`. It works in both 32-bit and 64-bit PowerShell and recognizes installations whose uninstall entry is under HKLM. A Windows Installer lookup failure produces an error. Portable test copies are outside this check. Add the product code here when releasing another MSI version.
 
 **Install FileCount 1.1.1**
 
