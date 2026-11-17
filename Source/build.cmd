@@ -11,7 +11,7 @@ set "build=%TEMP%\ExplorerCounts-Build-%RANDOM%-%RANDOM%"
 mkdir "%build%" || exit /b 1
 pushd "%build%" || exit /b 1
 rc /nologo /fo version.res "%source%version.rc" || exit /b 1
-cl /nologo /std:c++17 /W4 /O2 /EHsc /MT /guard:cf /DUNICODE /D_UNICODE "%source%main.cpp" /link version.res /DYNAMICBASE /NXCOMPAT /GUARD:CF /SUBSYSTEM:WINDOWS shell32.lib propsys.lib oleaut32.lib ole32.lib uuid.lib user32.lib gdi32.lib uiautomationcore.lib /OUT:"%source%..\ExplorerCounts.exe"
+cl /nologo /std:c++17 /W4 /O2 /EHsc /MT /guard:cf /DUNICODE /D_UNICODE "%source%main.cpp" /link version.res /DYNAMICBASE /NXCOMPAT /GUARD:CF /SUBSYSTEM:WINDOWS shell32.lib propsys.lib oleaut32.lib ole32.lib uuid.lib user32.lib gdi32.lib advapi32.lib uiautomationcore.lib /OUT:"%source%..\ExplorerCounts.exe"
 set "result=%errorlevel%"
 popd
 exit /b %result%

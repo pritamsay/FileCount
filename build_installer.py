@@ -8,14 +8,14 @@ from msilib import schema, sequence
 root = Path(__file__).resolve().parent
 release = root / "dist"
 release.mkdir(exist_ok=True)
-package = release / "FileCount-1.1.0-x64.msi"
+package = release / "FileCount-1.1.1-x64.msi"
 if not msilib.AMD64:
     raise RuntimeError("Use 64-bit Python.")
 if not (root / "ExplorerCounts.exe").is_file():
     raise RuntimeError("Run Source/build.cmd first.")
 
 db = msilib.init_database(str(package), schema, "FileCount",
-                          "{00F17C7A-452D-4CDD-B47D-3416E2046183}", "1.1.0", "pritamsay")
+                          "{B3155947-DD08-4664-A8ED-822CCC5055E6}", "1.1.1", "pritamsay")
 summary = db.GetSummaryInformation(1)
 # Compressed media (2) and a package that needs only current-user access (8).
 summary.SetProperty(msilib.PID_WORDCOUNT, 10)
@@ -27,7 +27,13 @@ def add(table, rows):
 
 
 add("Property", [("UpgradeCode", "{AE89250B-8094-46BD-B4BB-148D78C80DF1}"),
-                 ("INSTALLLEVEL", "1"), ("ARPNOMODIFY", "1")])
+                 ("INSTALLLEVEL", "1"), ("ARPNOMODIFY", "1"),
+                 ("SecureCustomProperties", "OLDERFILECOUNT;NEWERFILECOUNT")])
+add("Upgrade", [
+    ("{AE89250B-8094-46BD-B4BB-148D78C80DF1}", None, "1.1.1", None, 0, None, "OLDERFILECOUNT"),
+    ("{AE89250B-8094-46BD-B4BB-148D78C80DF1}", "1.1.1", None, None, 2, None, "NEWERFILECOUNT"),
+])
+add("LaunchCondition", [("Installed OR NOT NEWERFILECOUNT", "A newer FileCount version is installed.")])
 add("Directory", [("TARGETDIR", None, "SourceDir"),
                   ("LocalAppDataFolder", "TARGETDIR", "."),
                   ("Programs", "LocalAppDataFolder", "Programs"),
@@ -44,16 +50,25 @@ add("FeatureComponents", [(feature.id, "Application")])
 exe = root / "ExplorerCounts.exe"
 file_sequence, file_id = cab.append(str(exe), exe.name, "ExplorerCounts")
 add("File", [(file_id, "Application", "COUNT.EXE|ExplorerCounts.exe", exe.stat().st_size,
-              "1.1.0.0", "1033", 512, file_sequence)])
+              "1.1.1.0", "1033", 512, file_sequence)])
 
 for folder in ["ProgramMenuFolder", "StartupFolder"]:
     add("Shortcut", [(folder + "Link", folder, "FileCount", "Application",
                       "[#ExplorerCounts]", None, None, None, None, None, 1,
                       "APPDIR")])
 add("RemoveFile", [("RemoveApplicationFolder", "Application", None, "APPDIR", 2)])
-add("CustomAction", [("StartFileCount", 210, file_id, None)])
-add("InstallExecuteSequence", sequence.InstallExecuteSequence +
-    [("StartFileCount", "NOT Installed AND NOT REMOVE", 6800)])
+add("Binary", [("FileCountCleanup", msilib.Binary(str(exe)))])
+add("CustomAction", [("StartFileCount", 210, file_id, None),
+                     ("StopFileCount", 2, "FileCountCleanup", "--stop-installed"),
+                     ("CleanFileCountViews", 2, "FileCountCleanup", "--clean-views")])
+uninstall = 'REMOVE~="ALL" AND NOT UPGRADINGPRODUCTCODE'
+actions = [row for row in sequence.InstallExecuteSequence if row[0] != "LaunchConditions"]
+add("InstallExecuteSequence", actions + [
+    ("LaunchConditions", None, 300),
+    ("StopFileCount", uninstall + " OR OLDERFILECOUNT", 1300),
+    ("CleanFileCountViews", uninstall, 6750),
+    ("StartFileCount", "NOT Installed AND NOT REMOVE", 6800),
+])
 add("AdminExecuteSequence", sequence.AdminExecuteSequence)
 # A basic progress UI is sufficient. There are no configuration dialogs.
 add("InstallUISequence", [("ExecuteAction", None, 1300)])

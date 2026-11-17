@@ -1,7 +1,7 @@
 #include <windows.h>
 1 VERSIONINFO
-FILEVERSION 1,1,0,0
-PRODUCTVERSION 1,1,0,0
+FILEVERSION 1,1,1,0
+PRODUCTVERSION 1,1,1,0
 FILEOS VOS_NT_WINDOWS32
 FILETYPE VFT_APP
 BEGIN
@@ -11,7 +11,7 @@ BEGIN
   BEGIN
    VALUE "FileDescription", "FileCount"
    VALUE "ProductName", "FileCount"
-   VALUE "FileVersion", "1.1.0.0"
+   VALUE "FileVersion", "1.1.1.0"
    VALUE "OriginalFilename", "ExplorerCounts.exe"
   END
  END
@@ -20,4 +20,3 @@ BEGIN
   VALUE "Translation", 0x0409, 1200
  END
 END
-

@@ -5,6 +5,7 @@
 #include <set>
 #include "livecounts.h"
 #include "badges.h"
+#include "cleanup.h"
 
 // All Explorer access goes through the shell's public COM interfaces.
 struct ExplorerPane {
@@ -13,7 +14,7 @@ struct ExplorerPane {
 };
 static std::map<HWND, ExplorerPane> views;
 
-static void updateExplorer(bool exiting = false) {
+static void updateExplorer(bool exiting = false, bool uninstall = false) {
     ComPtr<IShellWindows> windows;
     if (FAILED(CoCreateInstance(CLSID_ShellWindows, nullptr, CLSCTX_LOCAL_SERVER,
                                 IID_PPV_ARGS(&windows)))) return;
@@ -33,6 +34,10 @@ static void updateExplorer(bool exiting = false) {
             FAILED(services->QueryService(SID_STopLevelBrowser, IID_PPV_ARGS(&browser))) ||
             FAILED(browser->QueryActiveShellView(&shell)) || FAILED(shell.As(&view))) continue;
 
+        if (uninstall) {
+            cleanOpenView(shell.Get(), view.Get());
+            continue;
+        }
         HWND pane = nullptr;
         if (FAILED(shell->GetWindow(&pane))) continue;
         open.insert(pane);
@@ -104,9 +109,41 @@ static LRESULT CALLBACK messages(HWND window, UINT message, WPARAM w, LPARAM l) 
     return DefWindowProcW(window, message, w, l);
 }
 
-int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
+static void stopInstalledHelper() {
+    HWND window = FindWindowW(L"ExplorerCounts.Tray", L"Explorer Counts");
+    if (!window) return;
+    DWORD pid = 0;
+    GetWindowThreadProcessId(window, &pid);
+    HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE, FALSE, pid);
+    if (!process) return;
+    wchar_t image[32768];
+    DWORD size = ARRAYSIZE(image);
+    PWSTR local = nullptr;
+    if (QueryFullProcessImageNameW(process, 0, image, &size) &&
+        SUCCEEDED(SHGetKnownFolderPath(FOLDERID_LocalAppData, 0, nullptr, &local))) {
+        auto installed = fs::path(local) / L"Programs" / L"FileCount" / L"ExplorerCounts.exe";
+        if (!_wcsicmp(image, installed.c_str())) {
+            PostMessageW(window, WM_CLOSE, 0, 0);
+            WaitForSingleObject(process, 5000);
+        }
+        CoTaskMemFree(local);
+    }
+    CloseHandle(process);
+}
+
+int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command, int) {
     SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
     if (FAILED(CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED))) return 1;
+    if (!wcscmp(command, L"--stop-installed") || !wcscmp(command, L"--clean-views")) {
+        stopInstalledHelper();
+        if (!wcscmp(command, L"--clean-views")) {
+            updateExplorer(false, true);
+            cleanSavedViews(HKEY_CURRENT_USER,
+                LR"(Software\Classes\Local Settings\Software\Microsoft\Windows\Shell\Bags)");
+        }
+        CoUninitialize();
+        return 0;
+    }
     HANDLE single = CreateMutexW(nullptr, FALSE, L"Local\\ExplorerCounts.Tray.Instance");
     if (!single || GetLastError() == ERROR_ALREADY_EXISTS) return 0;
     taskbarCreated = RegisterWindowMessageW(L"TaskbarCreated");
