@@ -2,25 +2,25 @@
 
 Show a sortable file count in Windows 11 File Explorer. In icon views, folders show a small round number at the top right while sorted by file count.
 
-## Install
+## Install and uninstall
 
-Run this command in Command Prompt or PowerShell on Windows x64.
+Run either command in Command Prompt or PowerShell on Windows x64.
+
+**Install FileCount 1.1.1**
 
 ```text
 msiexec.exe /i "https://raw.githubusercontent.com/pritamsay/FileCount/main/dist/FileCount-1.1.1-x64.msi" /passive
 ```
 
-Windows Installer installs the app for the current user, starts it, and creates a Startup shortcut. If you used the older portable Explorer Counts helper, exit it from the notification area and remove its old Startup shortcut first.
-
-## Uninstall
-
-Choose **Settings → Apps → Installed apps → FileCount → Uninstall**, or run this command for version 1.1.1.
+**Uninstall FileCount 1.1.1**
 
 ```text
 msiexec.exe /x "{B3155947-DD08-4664-A8ED-822CCC5055E6}" /passive
 ```
 
-Uninstall closes the installed helper and removes the File count column and sorting from open Explorer views and recognized saved folder layouts for the current user. When File count was the only sort, Explorer switches to Name. Windows supplies the built-in **File count** entry in **More…** and continues to list it there as an available property.
+Installation starts FileCount for the current user and adds a Startup shortcut. If you used the older portable Explorer Counts helper, exit it and remove its old Startup shortcut first.
+
+You can also uninstall through **Settings → Apps → Installed apps → FileCount**. Uninstall closes the helper and removes the File count column and sorting from open Explorer views and recognized saved folder layouts for the current user. When File count was the only sort, Explorer switches to Name. Windows supplies the built-in **File count** entry in **More…** and continues to list it there as an available property.
 
 ## Use
 
