@@ -60,6 +60,8 @@ The native column uses Windows' view-property cache. Microsoft marks [SetViewPro
 
 UI Automation follows Microsoft's [separate-thread guidance](https://learn.microsoft.com/en-us/windows/win32/winauto/uiauto-threading). These changes reduce repeated work and avoid synchronous UI Automation on the window thread; they cannot guarantee that Explorer never hangs or that every antivirus accepts an unsigned executable. No antivirus exclusions or security changes are required by FileCount.
 
+The 1.1.3 release EXE/MSI passed the recorded Kaspersky scans. A separate, non-distributed development diagnostic was flagged and removed; that alert has not been verified as a false positive. See the [validation record](Tests/VALIDATION.md) for the distinction and remaining test limitations.
+
 ## Tests
 
 Run `Tests\run.cmd` with the same Visual Studio build tools. It verifies direct counts, hidden/protected files, metadata exclusions, unknown/error results, cancellation, and the bounded worker queue using a deliberately slow counter. Temporary test data is isolated from user folders.
