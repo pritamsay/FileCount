@@ -1,22 +1,16 @@
 #pragma once
-#include <UIAutomation.h>
+#include "badge_reader.h"
 #include <map>
 #include <algorithm>
-
-struct IconLabel {
-    int x, y;
-    wstring text;
-    bool operator==(const IconLabel& b) const { return x == b.x && y == b.y && text == b.text; }
-};
 
 class IconBadges {
     HWND window = nullptr;
     RECT previous = {};
     std::vector<IconLabel> labels;
     int dpi = 96;
-    ComPtr<IUIAutomation> automation;
-    ComPtr<IUIAutomationCondition> listCondition, itemCondition;
-    ComPtr<IUIAutomationCacheRequest> cache;
+    bool dirty = true;
+    ULONGLONG lastLayout = 0;
+    std::shared_ptr<BadgeLayout> pending;
     static constexpr COLORREF clearColor = RGB(255, 0, 255);
 
     static LRESULT CALLBACK procedure(HWND hwnd, UINT msg, WPARAM w, LPARAM l) {
@@ -84,69 +78,50 @@ class IconBadges {
         }
         if (GetWindow(window, GW_OWNER) != owner)
             SetWindowLongPtrW(window, GWLP_HWNDPARENT, reinterpret_cast<LONG_PTR>(owner));
-        if (cache) return true;
-        if (FAILED(CoCreateInstance(CLSID_CUIAutomation, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&automation)))) return false;
-        VARIANT value = {};
-        value.vt = VT_I4;
-        value.lVal = UIA_ListControlTypeId;
-        if (FAILED(automation->CreatePropertyCondition(UIA_ControlTypePropertyId, value, &listCondition))) return false;
-        value.lVal = UIA_ListItemControlTypeId;
-        if (FAILED(automation->CreatePropertyCondition(UIA_ControlTypePropertyId, value, &itemCondition))) return false;
-        if (FAILED(automation->CreateCacheRequest(&cache))) return false;
-        cache->AddProperty(UIA_NamePropertyId);
-        cache->AddProperty(UIA_BoundingRectanglePropertyId);
-        cache->AddProperty(UIA_IsOffscreenPropertyId);
         return true;
     }
 
 public:
-    ~IconBadges() { if (window && IsWindow(window)) DestroyWindow(window); }
+    ~IconBadges() { if (pending) pending->cancelled = true; if (window && IsWindow(window)) DestroyWindow(window); }
 
-    void hide() { if (window && IsWindowVisible(window)) ShowWindow(window, SW_HIDE); }
+    void hide() {
+        if (pending) pending->cancelled = true;
+        dirty = true;
+        if (window && IsWindowVisible(window)) ShowWindow(window, SW_HIDE);
+    }
+    void invalidate() { hide(); }
 
-    void display(HWND owner, IShellView* shell, int iconSize, const std::map<wstring, ULONGLONG>& names) {
+    void display(HWND owner, IShellView* shell, int iconSize,
+                 const std::map<wstring, ULONGLONG>& names, BadgeReader& reader) {
         HWND pane = nullptr;
         if (names.empty() || FAILED(shell->GetWindow(&pane)) || !prepare(owner)) { hide(); return; }
-        ComPtr<IUIAutomationElement> root, list;
-        if (FAILED(automation->ElementFromHandle(pane, &root)) ||
-            FAILED(root->FindFirst(TreeScope_Subtree, listCondition.Get(), &list)) || !list) { hide(); return; }
-        RECT viewport = {};
-        if (FAILED(list->get_CurrentBoundingRectangle(&viewport)) || IsRectEmpty(&viewport)) { hide(); return; }
-        ComPtr<IUIAutomationElementArray> rows;
-        if (FAILED(list->FindAllBuildCache(TreeScope_Children, itemCondition.Get(), cache.Get(), &rows))) { hide(); return; }
-        std::vector<IconLabel> visible;
-        int total = 0;
-        rows->get_Length(&total);
-        dpi = GetDpiForWindow(owner);
-        for (int i = 0; i < total; ++i) {
-            ComPtr<IUIAutomationElement> row;
-            if (FAILED(rows->GetElement(i, &row))) continue;
-            BOOL offscreen = TRUE;
-            row->get_CachedIsOffscreen(&offscreen);
-            if (offscreen) continue;
-            BSTR title = nullptr;
-            row->get_CachedName(&title);
-            auto found = names.find(title ? title : L"");
-            SysFreeString(title);
-            if (found == names.end() || found->second == UnknownCount) continue;
-            RECT r = {};
-            if (FAILED(row->get_CachedBoundingRectangle(&r)) || IsRectEmpty(&r)) continue;
-            int right = (r.left + r.right) / 2 + (std::min)(scale(iconSize / 2), int(r.right-r.left)/2 - 2);
-            if (iconSize <= 24) right = r.left + scale(iconSize + 3);
-            int y = r.top + scale(2);
-            if (y < viewport.top || y + scale(17) > viewport.bottom || right > viewport.right || right <= viewport.left) continue;
-            visible.push_back({right - viewport.left, y - viewport.top, std::to_wstring(found->second)});
+        auto now = GetTickCount64();
+        if (pending && pending->done.load(std::memory_order_acquire)) {
+            if (!pending->cancelled) {
+                labels = std::move(pending->labels);
+                previous = pending->viewport;
+                dpi = pending->dpi;
+                if (labels.empty()) { if (window) ShowWindow(window, SW_HIDE); }
+                else {
+                    HWND above = GetWindow(owner, GW_HWNDPREV);
+                    SetWindowPos(window, above, previous.left, previous.top,
+                        previous.right - previous.left, previous.bottom - previous.top,
+                        SWP_NOACTIVATE | SWP_NOOWNERZORDER | SWP_SHOWWINDOW | (above == window ? SWP_NOZORDER : 0));
+                    RedrawWindow(window, nullptr, nullptr, RDW_INVALIDATE);
+                }
+            }
+            pending.reset();
         }
-        if (visible.empty() || IsIconic(owner) || !IsWindowVisible(owner)) { hide(); return; }
-        // Place the badges immediately above this Explorer window. Apps that
-        // overlap an inactive Explorer window must also cover its badges.
-        HWND above = GetWindow(owner, GW_HWNDPREV);
-        bool inPlace = above == window;
-        if (inPlace && IsWindowVisible(window) && EqualRect(&viewport, &previous) && labels == visible) return;
-        labels = std::move(visible);
-        previous = viewport;
-        SetWindowPos(window, above, viewport.left, viewport.top, viewport.right - viewport.left,
-                     viewport.bottom - viewport.top, SWP_NOACTIVATE | SWP_NOOWNERZORDER | SWP_SHOWWINDOW | (inPlace ? SWP_NOZORDER : 0));
-        RedrawWindow(window, nullptr, nullptr, RDW_INVALIDATE | RDW_UPDATENOW);
+        // One pending read per view, coalesced after layout/scroll events.
+        if (window && IsWindowVisible(window)) {
+            HWND above = GetWindow(owner, GW_HWNDPREV);
+            if (above != window) SetWindowPos(window, above, 0, 0, 0, 0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
+        }
+        if (pending || now - lastLayout < 500 || (!dirty && now - lastLayout < 3000)) return;
+        auto job = std::make_shared<BadgeLayout>();
+        job->pane = pane; job->iconSize = iconSize; job->dpi = GetDpiForWindow(owner);
+        job->names = names;
+        if (reader.submit(job)) { pending = job; dirty = false; lastLayout = now; }
     }
 };

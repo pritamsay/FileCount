@@ -11,8 +11,26 @@
 struct ExplorerPane {
     ViewCounts counts;
     IconBadges badges;
+    HWND owner = nullptr;
+    ULONGLONG retryAfter = 0;
 };
 static std::map<HWND, ExplorerPane> views;
+static std::unique_ptr<CountWorkers> workers;
+static std::unique_ptr<BadgeReader> badgeReader;
+static HWINEVENTHOOK layoutEvents = nullptr;
+static HWINEVENTHOOK scrollEvents = nullptr;
+
+// Events are delivered to this process; no DLL or code is loaded into Explorer.
+static void CALLBACK layoutChanged(HWINEVENTHOOK, DWORD event, HWND hwnd, LONG, LONG, DWORD, DWORD) {
+    if (event != EVENT_OBJECT_LOCATIONCHANGE && event != EVENT_OBJECT_REORDER &&
+        event != EVENT_OBJECT_NAMECHANGE && event != EVENT_OBJECT_CREATE &&
+        event != EVENT_OBJECT_DESTROY && event != EVENT_OBJECT_SHOW && event != EVENT_OBJECT_HIDE &&
+        event != EVENT_OBJECT_VALUECHANGE && event != EVENT_OBJECT_CONTENTSCROLLED &&
+        event != EVENT_SYSTEM_SCROLLINGSTART && event != EVENT_SYSTEM_SCROLLINGEND) return;
+    HWND owner = GetAncestor(hwnd, GA_ROOT);
+    for (auto& entry : views)
+        if (entry.second.owner == owner) entry.second.badges.invalidate();
+}
 
 static void updateExplorer(bool exiting = false, bool uninstall = false) {
     ComPtr<IShellWindows> windows;
@@ -28,9 +46,14 @@ static void updateExplorer(bool exiting = false, bool uninstall = false) {
         ComPtr<IDispatch> entry;
         ComPtr<IServiceProvider> services;
         ComPtr<IShellBrowser> browser;
+        ComPtr<IWebBrowser2> web;
         ComPtr<IShellView> shell;
         ComPtr<IFolderView2> view;
-        if (FAILED(windows->Item(index, &entry)) || !entry || FAILED(entry.As(&services)) ||
+        if (FAILED(windows->Item(index, &entry)) || !entry) continue;
+        SHANDLE_PTR handle = 0;
+        if (SUCCEEDED(entry.As(&web)) && SUCCEEDED(web->get_HWND(&handle)) &&
+            IsHungAppWindow(reinterpret_cast<HWND>(handle))) continue;
+        if (FAILED(entry.As(&services)) ||
             FAILED(services->QueryService(SID_STopLevelBrowser, IID_PPV_ARGS(&browser))) ||
             FAILED(browser->QueryActiveShellView(&shell)) || FAILED(shell.As(&view))) continue;
 
@@ -43,27 +66,38 @@ static void updateExplorer(bool exiting = false, bool uninstall = false) {
         open.insert(pane);
         auto &state = views[pane];
         HWND owner = GetAncestor(pane, GA_ROOT);
+        state.owner = owner;
         if (exiting || !IsWindowVisible(pane) || IsIconic(owner)) {
             state.badges.hide();
+            state.counts.reset();
             continue;
         }
+        if (GetTickCount64() < state.retryAfter) { state.badges.hide(); continue; }
+        auto started = GetTickCount64();
         FOLDERVIEWMODE mode = FVM_AUTO;
         int size = 0;
-        if (FAILED(view->GetViewModeAndIconSize(&mode, &size))) continue;
+        if (FAILED(view->GetViewModeAndIconSize(&mode, &size))) { state.badges.hide(); continue; }
         bool details = mode == FVM_DETAILS;
         bool iconMode = mode == FVM_ICON || mode == FVM_SMALLICON ||
                         mode == FVM_THUMBNAIL || mode == FVM_THUMBSTRIP;
         bool byCount = sortedByFileCount(view.Get());
         bool badges = iconMode && byCount;
         if (byCount || (details && fileCountColumnVisible(shell.Get()))) {
-            if (updateCounts(view.Get(), badges, state.counts) == S_OK && badges) {
-                state.badges.display(owner, shell.Get(), size, state.counts.iconCounts);
-                continue;
-            }
+            auto updated = state.counts.lastUpdate;
+            auto result = updateCounts(view.Get(), badges, state.counts, *workers);
+            if (updated != state.counts.lastUpdate) state.badges.invalidate();
+            if (result == S_OK && badges) {
+                state.badges.display(owner, shell.Get(), size, state.counts.iconCounts, *badgeReader);
+            } else state.badges.hide();
         } else {
-            state.counts.lastUpdate = 0;
+            state.counts.reset();
+            state.badges.hide();
         }
-        state.badges.hide();
+        // A slow provider gets a cooling-off period rather than immediate retries.
+        if (GetTickCount64() - started > 150) {
+            state.retryAfter = GetTickCount64() + 10000;
+            state.badges.hide();
+        }
     }
     for (auto it = views.begin(); it != views.end();) {
         if (!open.count(it->first)) it = views.erase(it);
@@ -83,7 +117,10 @@ static LRESULT CALLBACK messages(HWND window, UINT message, WPARAM w, LPARAM l) 
     if (message == WM_TIMER) {
         KillTimer(window, 1);
         updateExplorer();
-        SetTimer(window, 1, 350, nullptr);
+        bool publishing = false;
+        for (const auto& pane : views)
+            publishing |= pane.second.counts.enumerating || pane.second.counts.publishing;
+        SetTimer(window, 1, publishing ? 150 : 750, nullptr);
         return 0;
     }
     if (message == trayEvent && (l == WM_RBUTTONUP || l == WM_LBUTTONUP)) {
@@ -102,7 +139,11 @@ static LRESULT CALLBACK messages(HWND window, UINT message, WPARAM w, LPARAM l) 
     if (message == WM_DESTROY) {
         KillTimer(window, 1);
         Shell_NotifyIconW(NIM_DELETE, &tray);
-        updateExplorer(true);
+        if (layoutEvents) UnhookWinEvent(layoutEvents);
+        if (scrollEvents) UnhookWinEvent(scrollEvents);
+        views.clear(); // Exit never calls back into a possibly unresponsive Explorer.
+        workers.reset();
+        badgeReader.reset();
         PostQuitMessage(0);
         return 0;
     }
@@ -146,6 +187,12 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR command, int) {
     }
     HANDLE single = CreateMutexW(nullptr, FALSE, L"Local\\ExplorerCounts.Tray.Instance");
     if (!single || GetLastError() == ERROR_ALREADY_EXISTS) return 0;
+    workers = std::make_unique<CountWorkers>();
+    badgeReader = std::make_unique<BadgeReader>();
+    layoutEvents = SetWinEventHook(EVENT_OBJECT_CREATE, EVENT_OBJECT_CONTENTSCROLLED, nullptr,
+        layoutChanged, 0, 0, WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS);
+    scrollEvents = SetWinEventHook(EVENT_SYSTEM_SCROLLINGSTART, EVENT_SYSTEM_SCROLLINGEND, nullptr,
+        layoutChanged, 0, 0, WINEVENT_OUTOFCONTEXT | WINEVENT_SKIPOWNPROCESS);
     taskbarCreated = RegisterWindowMessageW(L"TaskbarCreated");
     WNDCLASSW type = {};
     type.hInstance = instance;
