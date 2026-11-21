@@ -2,29 +2,37 @@
 
 Show a sortable file count in Windows 11 File Explorer. In icon views, folders show a small round number at the top right while sorted by file count.
 
-## Install and uninstall
+## Install, uninstall and check
 
-Run these commands in Command Prompt or PowerShell on Windows x64.
+Use these short commands in **Command Prompt or PowerShell** on Windows 11. No custom command launcher, Python, or PowerShell script is needed.
 
-**Check whether FileCount is installed**
+### Install
 
-```text
-powershell.exe -NoProfile -Command "try { if ((New-Object -ComObject WindowsInstaller.Installer).ProductState('{84EA5B79-6BCE-4209-9097-C84CDB8DD07A}') -eq 5 -or (New-Object -ComObject WindowsInstaller.Installer).ProductState('{1180C4D7-58A0-48B4-BDB0-94C42594E7F2}') -eq 5 -or (New-Object -ComObject WindowsInstaller.Installer).ProductState('{B3155947-DD08-4664-A8ED-822CCC5055E6}') -eq 5 -or (New-Object -ComObject WindowsInstaller.Installer).ProductState('{00F17C7A-452D-4CDD-B47D-3416E2046183}') -eq 5) { 'FileCount is installed' } else { 'FileCount is not installed' } } catch { Write-Error 'Could not check Windows Installer'; exit 1 }"
-```
-
-This asks Windows Installer whether FileCount 1.1.0, 1.1.1, 1.1.2 or 1.1.3 is installed and prints `FileCount is installed` or `FileCount is not installed`. It works in both 32-bit and 64-bit PowerShell and recognizes installations whose uninstall entry is under HKLM. A Windows Installer lookup failure produces an error. Portable test copies are outside this check. Add the product code here when releasing another MSI version.
-
-**Install or update FileCount 1.1.3**
+[Download FileCount.msi](https://github.com/pritamsay/FileCount/raw/refs/heads/main/dist/FileCount.msi), open a terminal in the folder containing it, and run:
 
 ```text
-msiexec.exe /i "https://raw.githubusercontent.com/pritamsay/FileCount/main/dist/FileCount-1.1.3-x64.msi" /passive
+msiexec /i FileCount.msi
 ```
 
-**Uninstall FileCount 1.1.3**
+You can also double-click the downloaded MSI. This download is the current published version, **1.1.3**, with a stable filename. If a newer version is already installed, keep it; the installer will not downgrade it.
+
+### Uninstall
 
 ```text
-msiexec.exe /x "{84EA5B79-6BCE-4209-9097-C84CDB8DD07A}" /passive
+winget uninstall FileCount
 ```
+
+### Check whether FileCount is installed
+
+```text
+winget list FileCount
+```
+
+The check shows the installed version, including versions installed directly with an MSI. If no app matches, WinGet reports that no installed package was found. It does not depend on a hardcoded list of version IDs. This command was verified on a PC with FileCount **1.1.4** installed. Portable test copies are outside this check.
+
+WinGet is supplied by Microsoft's **App Installer** on Windows 11. If Windows cannot find `winget`, install or update [App Installer](https://apps.microsoft.com/detail/9nblggh4nns1), then reopen your terminal. These commands use Microsoft's documented [list](https://learn.microsoft.com/en-us/windows/package-manager/winget/list) and [uninstall](https://learn.microsoft.com/en-us/windows/package-manager/winget/uninstall) support for apps installed by other means.
+
+**Why download the MSI first?** FileCount is not yet listed in the public WinGet catalog, so `winget install FileCount` is not currently available. The download above followed by the short MSI command is the supported installation method. No antivirus exclusions or security-policy changes are needed.
 
 Installation starts FileCount for the current user and adds a Startup shortcut. If you used the older portable Explorer Counts helper, exit it and remove its old Startup shortcut first.
 

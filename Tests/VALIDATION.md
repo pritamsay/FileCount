@@ -1,4 +1,14 @@
-# FileCount 1.1.3 validation
+# FileCount validation
+
+## Short commands (2026-11-21)
+
+- `winget list FileCount` correctly identifies the locally installed 1.1.4 MSI in Command Prompt and both 32-bit and 64-bit Windows PowerShell. The old README command checked only product codes through 1.1.3 and therefore returned an incorrect absence result.
+- The documented check uses WinGet's installed-app inventory. The uninstall command delegates to the registered MSI uninstaller. The app was not uninstalled or reinstalled during this command-documentation change.
+- `dist/FileCount.msi` is byte-identical to the published 1.1.3 installer: SHA-256 `DAA0BDF46AB05355ED50DAAF6C2850102381ED58B9BD8708A1F5320CCDD0F91C`. The stable filename keeps the local install command short. It does not publish the pending 1.1.4 application changes.
+- A trial `filecount.cmd` launcher was abandoned after its setup failed, its source disappeared, and Kaspersky `avp` events referenced its path and hash at the same time. The event payload did not include a readable threat classification, so no false-positive conclusion is claimed. Its remaining installed copy and the PATH entry created by that trial were removed. It was not published, restored, or rerun after those events. No exclusions or security settings were changed.
+- The final instructions use existing Windows commands and the previously published MSI, with no custom command launcher.
+
+## 1.1.3 performance update
 
 Tested on the development Windows 11 PC on 2026-11-18.
 

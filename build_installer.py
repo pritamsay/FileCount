@@ -1,6 +1,7 @@
 """Build the per-user Windows Installer package with 64-bit Python 3.10."""
 
 from pathlib import Path
+from shutil import copyfile
 import msilib
 from msilib import schema, sequence
 
@@ -75,4 +76,5 @@ add("InstallUISequence", [("ExecuteAction", None, 1300)])
 add("AdminUISequence", [("ExecuteAction", None, 1300)])
 cab.commit(db)
 db.Commit()
+copyfile(package, release / "FileCount.msi")
 print(package)
